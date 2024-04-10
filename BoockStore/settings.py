@@ -85,7 +85,7 @@ WSGI_APPLICATION = 'BoockStore.wsgi.application'
 #     }
 # }
 
-
+DEFAULT_AUTO_FIELD='django.db.models.AutoField'
 
 DATABASES = {
     'default': {
