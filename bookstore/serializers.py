@@ -1,6 +1,14 @@
 from rest_framework import serializers
 from .models import Books, Category, UserInventory, ChargeTokens, BookOrders
 
+
+class UserInventorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserInventory
+        fields = '__all__'
+
+
+
 class BooksSerializer(serializers.ModelSerializer):
     class Meta:
         model = Books

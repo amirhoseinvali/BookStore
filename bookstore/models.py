@@ -3,6 +3,8 @@ from django.db import models
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 from django.contrib.auth.models import User
+from PyPDF2 import PdfReader, PdfWriter
+
 # Create your models here.
 
 
@@ -13,6 +15,7 @@ def create_user_inventory(sender, instance, created, **kwargs):
           UserInventory.objects.create(user=instance).save()
     except Exception as err:
        print(f'Error creating user inventory!\n{err}')
+
 
 
 def update_cover_filename(instance, filename):
@@ -99,3 +102,42 @@ class BookOrders(models.Model):
 
     def __str__(self):
         return "%s" % self.book
+    
+
+class ForbiddenBooksPermissions:
+    class Meta:
+        permissions = (
+            ("access_forbidden_books", "دادن دسترسی به کتاب های ممنوعه"),
+        )
+
+
+
+
+
+
+@receiver(post_save, sender=Books)
+def create_book_preview(sender, instance, created, **kwargs):
+    try:
+       if created:
+            file_name = instance.pdf_file
+            pages = (1, 10)
+            reader = PdfReader(file_name)
+            writer = PdfWriter()
+            page_range = range(pages[0], pages[1] + 1)
+
+            for page_num, page in enumerate(reader.pages, 1):
+                if page_num in page_range:
+                    writer.add_page(page)
+            with open(f'preview/{instance.id}.pdf', 'wb') as out:
+                writer.write(out)
+
+    except Exception as err:
+       print(f'Error creating book preview!\n{err}')
+
+
+
+
+
+
+
+
