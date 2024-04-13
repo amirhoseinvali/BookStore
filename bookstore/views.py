@@ -7,16 +7,16 @@ from django.utils.crypto import get_random_string
 from .models import Books, Category, UserInventory, ChargeTokens, BookOrders
 from .serializers import BooksSerializer, CategorySerializer, ChargeTokensSerializer, BookOrdersSerializer,UserInventorySerializer
 
-# from django.contrib.auth.models import Group, Permission
-# from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
 
-# def add_access_forbiden_permission():
-#     forbidden_group, created = Group.objects.get_or_create(name='forbidden')
-#     content_type = ContentType.objects.get_for_model(Permission, for_concrete_model=False)
-#     permission = Permission.objects.create(codename='access_forbidden_books',
-#                                     name='Access to forbidden books',
-#                                     content_type=content_type)
-#     forbidden_group.permissions.add(permission)
+def add_access_forbiden_permission():
+    forbidden_group, created = Group.objects.get_or_create(name='forbidden')
+    content_type = ContentType.objects.get_for_model(Permission, for_concrete_model=False)
+    permission = Permission.objects.create(codename='access_forbidden_books',
+                                    name='Access to forbidden books',
+                                    content_type=content_type)
+    forbidden_group.permissions.add(permission)
 
 
 @api_view(['GET'])
