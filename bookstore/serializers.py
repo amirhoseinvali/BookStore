@@ -14,6 +14,11 @@ class BooksSerializer(serializers.ModelSerializer):
         model = Books
         fields = '__all__'
 
+class BooksSerializerDenied(serializers.ModelSerializer):
+    class Meta:
+        model = Books
+        fields = ['book_name', 'author', 'isbn_code', 'category', 'cover_image', 'quantity', 'price', 'is_forbidden']
+
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:

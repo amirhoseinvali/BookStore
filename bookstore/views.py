@@ -2,10 +2,12 @@ from datetime import datetime, timedelta
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import  permission_classes
+from django.contrib.auth.models import User, PermissionsMixin
 from django.http import JsonResponse
+from django.db.models import Q
 from django.utils.crypto import get_random_string
 from .models import Books, Category, UserInventory, ChargeTokens, BookOrders
-from .serializers import BooksSerializer, CategorySerializer, ChargeTokensSerializer, BookOrdersSerializer,UserInventorySerializer
+from .serializers import BooksSerializer, CategorySerializer, ChargeTokensSerializer, BookOrdersSerializer,UserInventorySerializer, BooksSerializerDenied
 
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
@@ -13,20 +15,61 @@ from django.contrib.contenttypes.models import ContentType
 def add_access_forbiden_permission():
     forbidden_group, created = Group.objects.get_or_create(name='forbidden')
     content_type = ContentType.objects.get_for_model(Permission, for_concrete_model=False)
-    permission = Permission.objects.create(codename='access_forbidden_books',
+    if not Permission.objects.filter(codename='access_forbidden_books'):
+        permission = Permission.objects.create(codename='access_forbidden_books',
                                     name='Access to forbidden books',
                                     content_type=content_type)
-    forbidden_group.permissions.add(permission)
+        forbidden_group.permissions.add(permission)
 
+add_access_forbiden_permission()
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def books_list(request):
-    books = Books.objects.all()
-    serializer = BooksSerializer(books, many = True)
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+def check_input(input):
+    response = MakeJsonResponse(1, MessageCodes.Input_Error, {"error":"{} Input is Mandatory!".format(input)})
     return JsonResponse(response, safe=False)
 
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def books_list(request):
+    user = User.objects.get(id=request.user.id)
+    if request.method == 'GET':
+        if User.groups.through.objects.filter(Q(user=user) & Q(group=1)):
+            books = Books.objects.all()
+        else:
+            books = Books.objects.filter(is_forbidden = False)
+        for book in books:
+            book.pdf_file = "/preview/{}.pdf".format(book.id)
+        serializer = BooksSerializer(books, many = True)
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+        return JsonResponse(response, safe=False)
+    
+    if request.method == 'POST':
+        if not 'book_id' in request.data:
+            return check_input('book_id')
+
+        book_id = request.data['book_id']
+        try:
+            books = Books.objects.get(id = book_id)
+        except:
+            response = MakeJsonResponse(1, MessageCodes.Book_Not_Found, {})
+            return JsonResponse(response, safe=False)
+        if books.is_forbidden == True and  User.groups.through.objects.filter(Q(user=user) & Q(group=1))== False:
+            response = MakeJsonResponse(1, MessageCodes.Permission_Denied, {})
+            return JsonResponse(response, safe=False)
+        try:
+            has_book = BookOrders.objects.get(book=books.id, user = request.user.id, is_canceled = False)
+            if has_book:
+                serializer = BooksSerializer(books)
+                response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+                return JsonResponse(response)
+
+        except:
+            books.pdf_file = "/preview/{}.pdf".format(books.id)
+            serializer = BooksSerializer(books)
+            serializer.data['preview'] = 'preview/{books.id}.pdf'
+            response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+            return JsonResponse(response)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -40,21 +83,29 @@ def category_list(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def charge_request(request):
+    if not 'amount' in request.data:
+        return check_input('amount')
     user = request.user
     otp_token = get_random_string(length=15)
     request.data['user'] = user.id
     request.data['otp_token'] = otp_token
     serializer = ChargeTokensSerializer(data = request.data)
-    serializer.is_valid()
-    serializer.save()
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
-    return JsonResponse(response)
+    if serializer.is_valid():
+        serializer.save()
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+        return JsonResponse(response)
+    else:
+        response = MakeJsonResponse(1, MessageCodes.Unvalid_Data, {})
+        return JsonResponse(response)
+
 
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def charge(request):
+    if not 'otp_token' in request.data:
+        return check_input('otp_token')
     otp_token = request.data['otp_token']
     try:
         token_instance = ChargeTokens.objects.get(otp_token = otp_token)
@@ -88,7 +139,10 @@ def charge(request):
 
 
 def belong_check(user_id, book_id):
-    book_order = BookOrders.objects.get(user = user_id, book = book_id, is_canceled = False)
+    try:
+        book_order = BookOrders.objects.get(user = user_id, book = book_id, is_canceled = False)
+    except:
+        return False
     if book_order:
         return True
     else:
@@ -98,11 +152,13 @@ def belong_check(user_id, book_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def buy_book(request):
+    if not 'book_id' in request.data:
+        return check_input('book_id')
     user = request.user
     user_inventory = UserInventory.objects.get(user = user.id)
     book_id = request.data['book_id']
     book_instance = Books.objects.get(id = book_id)
-    forbiden_access = False
+    forbiden_access = User.groups.through.objects.filter(Q(user=user) & Q(group=1))
     belong = belong_check(user.id, book_id)
     if not book_instance.is_forbidden or forbiden_access:
         if not belong:
@@ -140,7 +196,8 @@ def buy_book(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def reverse_order(request):
-
+    if not 'book_id' in request.data:
+        return check_input('book_id')
     user = request.user
     book_id = request.data['book_id']
     try:
@@ -167,7 +224,6 @@ def reverse_order(request):
     except:
             response = MakeJsonResponse(1, MessageCodes.Never_Bought_Before, {})
             return JsonResponse(response)
-
 
 
 @api_view(['GET'])
@@ -227,6 +283,10 @@ class MessageCodes:
     Never_Bought_Before = 8
     Has_No_Books = 9
     Has_No_Orders = 10
+    Unvalid_Data = 11
+    Book_Not_Found = 12
+    Permission_Denied = 13
+    Input_Error = 14
 
 
     messages_names = {
@@ -240,7 +300,11 @@ class MessageCodes:
             7: 'Allowed Time For Reverse HAs Expired',
             8: 'You Never Bought This Book Before',
             9: 'You Have Not Bought Any Books Yet',
-            10: 'You Have Not Any Orders Yet'
+            10: 'You Have Not Any Orders Yet',
+            11: 'Request Data Is Not Valid',
+            12: 'Requested Book Not Found',
+            13: 'You Have Not Permission To View This Book',
+            14: 'Enter Inputs Correctly'
             }
 
 
@@ -257,5 +321,4 @@ def MakeJsonResponse(status, messagecode, data=None):
 # Statuses:
 # 0: success
 # 1: conditional
-# 2: failed
 # message codes 
