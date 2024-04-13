@@ -56,24 +56,34 @@ def charge_request(request):
 @permission_classes([IsAuthenticated])
 def charge(request):
     otp_token = request.data['otp_token']
-    token_instance = ChargeTokens.objects.get(otp_token = otp_token)
-    if token_instance:
-        user = token_instance.user
-        amount = token_instance.amount
-    if not token_instance.is_used:
-        user_inventory = UserInventory.objects.get(user = user.id)
-        user_current_inventory = user_inventory.inventory
-        new_user_inventory = user_current_inventory + amount
-        user_inventory.inventory = new_user_inventory
-        user_inventory.save()
-        token_instance.is_used = True
-        token_instance.apply_time = datetime.now()
-        token_instance.save()
-        user_inventory = UserInventory.objects.get(user = user.id)
+    try:
+        token_instance = ChargeTokens.objects.get(otp_token = otp_token)
+        if token_instance:
+            user = token_instance.user
+            amount = token_instance.amount
+            if not token_instance.is_used:
+                user_inventory = UserInventory.objects.get(user = user.id)
+                user_current_inventory = user_inventory.inventory
+                new_user_inventory = user_current_inventory + amount
+                user_inventory.inventory = new_user_inventory
+                user_inventory.save()
+                token_instance.is_used = True
+                token_instance.apply_time = datetime.now()
+                token_instance.save()
+                user_inventory = UserInventory.objects.get(user = user.id)
+            else:
+                response = MakeJsonResponse(1, MessageCodes.Token_Is_Used, {})
+                return JsonResponse(response)
+        else:
+            response = MakeJsonResponse(1, MessageCodes.Token_Not_Found, {})
+            return JsonResponse(response)
+        serializer = UserInventorySerializer(user_inventory)
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+        return JsonResponse(response)
+    except:
+            response = MakeJsonResponse(1, MessageCodes.Token_Not_Found, {})
+            return JsonResponse(response)
 
-    serializer = UserInventorySerializer(user_inventory)
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
-    return JsonResponse(response)
 
 
 
@@ -109,6 +119,19 @@ def buy_book(request):
                     book_instance.save()
                     user_inventory.save()
                     serializer.save()
+                else:
+                    response = MakeJsonResponse(1, MessageCodes.Inventory_Not_Enough, {})
+                    return JsonResponse(response)
+            else:
+                response = MakeJsonResponse(1, MessageCodes.Insufficient_Quantity, {})
+                return JsonResponse(response)
+        else:
+            response = MakeJsonResponse(1, MessageCodes.Book_Bought_Before, {})
+            return JsonResponse(response)
+    else:
+        response = MakeJsonResponse(1, MessageCodes.Have_Not_Access, {})
+        return JsonResponse(response)
+    
     response = MakeJsonResponse(0, MessageCodes.Successful_Operation, order)
     return JsonResponse(response, safe=False)
 
@@ -120,21 +143,30 @@ def reverse_order(request):
 
     user = request.user
     book_id = request.data['book_id']
-    book_order = BookOrders.objects.get(user = user.id, book = book_id, is_canceled = False)
-
-    if book_order:
-        if book_order.order_time + timedelta(days=0, hours=-1) < datetime.now():
-            book_instance = Books.objects.get(id = book_id)
-            user_inventory = UserInventory.objects.get(user = user.id)
-            book_order.is_canceled = True
-            book_order.canceled_time = datetime.now()
-            book_instance.quantity += 1
-            user_inventory.inventory += book_order.price
-            book_order.save()
-            book_instance.save()
-            user_inventory.save()
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, {})
-    return JsonResponse(response, safe=False)
+    try:
+        book_order = BookOrders.objects.get(user = user.id, book = book_id, is_canceled = False)
+        if book_order:
+            if book_order.order_time + timedelta(days=0, hours=-1) < datetime.now():
+                book_instance = Books.objects.get(id = book_id)
+                user_inventory = UserInventory.objects.get(user = user.id)
+                book_order.is_canceled = True
+                book_order.canceled_time = datetime.now()
+                book_instance.quantity += 1
+                user_inventory.inventory += book_order.price
+                book_order.save()
+                book_instance.save()
+                user_inventory.save()
+            else:
+                response = MakeJsonResponse(1, MessageCodes.Allowed_Time_Has_Expired, {})
+                return JsonResponse(response)
+        else:
+            response = MakeJsonResponse(1, MessageCodes.Never_Bought_Before, {})
+            return JsonResponse(response)
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, {})
+        return JsonResponse(response, safe=False)
+    except:
+            response = MakeJsonResponse(1, MessageCodes.Never_Bought_Before, {})
+            return JsonResponse(response)
 
 
 
@@ -142,12 +174,19 @@ def reverse_order(request):
 @permission_classes([IsAuthenticated])
 def user_books(request):
     user = request.user
-    book_orders = BookOrders.objects.filter(user = user.id, is_canceled = False)
-    if book_orders:
-        serializer = BookOrdersSerializer(data = book_orders, many = True)
-        serializer.is_valid()
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
-    return JsonResponse(response, safe=False)
+    try:
+        book_orders = BookOrders.objects.filter(user = user.id, is_canceled = False)
+        if book_orders:
+            serializer = BookOrdersSerializer(data = book_orders, many = True)
+            serializer.is_valid()
+        else:
+            response = MakeJsonResponse(1, MessageCodes.Has_No_Books, {})
+            return JsonResponse(response)
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+        return JsonResponse(response, safe=False)
+    except:
+        response = MakeJsonResponse(1, MessageCodes.Has_No_Books, {})
+        return JsonResponse(response)
 
 
 
@@ -155,12 +194,20 @@ def user_books(request):
 @permission_classes([IsAuthenticated])
 def user_orders(request):
     user = request.user
-    book_orders = BookOrders.objects.filter(user = user.id)
-    if book_orders:
-        serializer = BookOrdersSerializer(data = book_orders, many = True)
-        serializer.is_valid()
-    response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
-    return JsonResponse(response, safe=False)
+    try:
+        book_orders = BookOrders.objects.filter(user = user.id)
+        if book_orders:
+            serializer = BookOrdersSerializer(data = book_orders, many = True)
+            serializer.is_valid()
+        else:
+            response = MakeJsonResponse(1, MessageCodes.Has_No_Orders, {})
+            return JsonResponse(response)
+        response = MakeJsonResponse(0, MessageCodes.Successful_Operation, serializer.data)
+        return JsonResponse(response, safe=False)
+    except:
+        response = MakeJsonResponse(1, MessageCodes.Has_No_Orders, {})
+        return JsonResponse(response)
+
 
 
 
@@ -170,20 +217,30 @@ def user_orders(request):
 
 class MessageCodes:
     Successful_Operation = 0
-    Enter_Terminal_Id = 1
-    Enter_Ticket_Number = 2
-    Enter_Nationality_ID = 3
-    Voucher_Info_Not_Found = 4
-    Internal_Error = 5
+    Token_Not_Found = 1
+    Token_Is_Used = 2
+    Inventory_Not_Enough = 3
+    Insufficient_Quantity = 4
+    Book_Bought_Before = 5
+    Have_Not_Access = 6
+    Allowed_Time_Has_Expired = 7
+    Never_Bought_Before = 8
+    Has_No_Books = 9
+    Has_No_Orders = 10
+
 
     messages_names = {
             0: 'Successful Operation',
-            1: 'Enter Terminal Number',
-            2: 'Enter Ticket Number',
-            3: 'Enter Nationality ID',
-            4: 'Voucher Info Not Found',
-            5: 'Internal Error',
-            6: 'Enter Retrieval Reference Number (RRN)'
+            1: 'The Entered Token Not Found',
+            2: 'Token Is Used Before',
+            3: 'Your Account Inventory Is Not Enough',
+            4: 'Quantity Of This Book Is Insufficient',
+            5: 'You Bought This Book Before',
+            6: 'You Have Not Access To This Book',
+            7: 'Allowed Time For Reverse HAs Expired',
+            8: 'You Never Bought This Book Before',
+            9: 'You Have Not Bought Any Books Yet',
+            10: 'You Have Not Any Orders Yet'
             }
 
 
