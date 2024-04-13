@@ -81,7 +81,7 @@ DATABASES = {
         'NAME': 'bookstore',
         'USER': 'postgres',
         'PASSWORD': 'postgres',
-        'HOST': 'localhost',
+        'HOST': 'db',
         'PORT': '5432', # default PostgreSQL port
     }
 }
